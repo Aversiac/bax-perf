@@ -1,20 +1,6 @@
-/* perf.h - v0.5 - public domain data structures - nickscha 2025
+#include "perf.h"
 
-A C89 standard compliant, single header, nostdlib (no C Standard Library) simple performance profiler.
-
-This Test class defines cases to verify that we don't break the excepted behaviours in the future upon changes.
-
-LICENSE
-
-  Placed in the public domain and also MIT licensed.
-  See end of file for detailed license information.
-
-*/
-#define PERF_STATS_ENABLE
-#include "../perf.h"      /* Performance Profiler     */
-#include "../deps/test.h" /* Simple Testing framework */
-
-void test_function(double a, double b)
+static void test_function(double a, double b)
 {
   int i;
   for (i = 0; i < 100; ++i)
@@ -23,7 +9,7 @@ void test_function(double a, double b)
   }
 }
 
-int main(void)
+int main()
 {
   int i;
 

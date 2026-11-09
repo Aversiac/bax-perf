@@ -1,6 +1,8 @@
 /* perf.h - v0.5 - public domain data structures - nickscha 2025
 
-A C89 standard compliant, single header, nostdlib (no C Standard Library) simple performance profiler.
+Modified for C++20 compatibility in November of 2026 by Brandon Alexander
+
+A single header, nostdlib (no C Standard Library) simple performance profiler.
 
 LICENSE
 
@@ -15,48 +17,54 @@ LICENSE
  * # COMPILER SETTINGS
  * #############################################################################
  */
-/* Check if using C99 or later (inline is supported) */
+ /* Check if using C99 or later (inline is supported) */
 #if __STDC_VERSION__ >= 199901L
 #define PERF_INLINE inline
 #elif defined(__GNUC__) || defined(__clang__)
 #define PERF_INLINE __inline__
-#elif defined(_MSC_VER)
+#elif _MSC_VER
 #define PERF_INLINE __inline
 #else
 #define PERF_INLINE
 #endif
 
+#if defined(_MSC_VER)
+typedef unsigned __int64 perf_u64;
+#else
+typedef unsigned long long perf_u64;
+#endif
+
 #define PERF_API static
 
-PERF_API PERF_INLINE unsigned long perf_strlen(char *str)
+PERF_API PERF_INLINE unsigned long perf_strlen(const char* str)
 {
-    char *s = str;
-    while (*s)
-    {
-        s++;
-    }
-    return (unsigned long)(s - str);
+	const char* s = str;
+	while (*s)
+	{
+		s++;
+	}
+	return (unsigned long)(s - str);
 }
 
-PERF_API PERF_INLINE unsigned long perf_append_string(char *dest, unsigned long current_len, unsigned long max_len, char *src)
+PERF_API PERF_INLINE unsigned long perf_append_string(char* dest, unsigned long current_len, unsigned long max_len, const char* src)
 {
-    unsigned long i = 0;
-    unsigned long remaining = max_len > current_len ? max_len - current_len : 0;
+	unsigned long i = 0;
+	unsigned long remaining = max_len > current_len ? max_len - current_len : 0;
 
-    if (remaining <= 1) /* Not enough space for even a null terminator */
-    {
-        return 0;
-    }
+	if (remaining <= 1) /* Not enough space for even a null terminator */
+	{
+		return 0;
+	}
 
-    /* Leave one byte for the null terminator */
-    while (src[i] != '\0' && i < remaining - 1)
-    {
-        dest[current_len + i] = src[i];
-        i++;
-    }
-    dest[current_len + i] = '\0';
+	/* Leave one byte for the null terminator */
+	while (src[i] != '\0' && i < remaining - 1)
+	{
+		dest[current_len + i] = src[i];
+		i++;
+	}
+	dest[current_len + i] = '\0';
 
-    return i;
+	return i;
 }
 
 /* #############################################################################
@@ -68,60 +76,91 @@ PERF_API PERF_INLINE unsigned long perf_append_string(char *dest, unsigned long 
 
 typedef union LARGE_INTEGER
 {
-    unsigned long LowPart;
-    long HighPart;
+	struct {
+		unsigned long LowPart;
+		long HighPart;
+	};
+	__int64 QuadPart;
 } LARGE_INTEGER;
 
 #define PERF_WIN32_API(r) __declspec(dllimport) r __stdcall
 
-PERF_WIN32_API(int)
-QueryPerformanceFrequency(LARGE_INTEGER *lpFrequency);
-PERF_WIN32_API(int)
-QueryPerformanceCounter(LARGE_INTEGER *lpPerformanceCount);
-PERF_WIN32_API(void *)
-GetStdHandle(unsigned long nStdHandle);
-PERF_WIN32_API(int)
-WriteConsoleA(void *hConsoleOutput, void *lpBuffer, unsigned long nNumberOfCharsToWrite, unsigned long *lpNumberOfCharsWritten, void *lpReserved);
+#ifdef __cplusplus 
+extern "C" {
+#endif
+	PERF_WIN32_API(int)
+		GetConsoleMode(void* hConsoleHandle, unsigned long* lpMode);
+	PERF_WIN32_API(int)
+		SetConsoleMode(void* hConsoleHandle, unsigned long dwMode);
+	PERF_WIN32_API(int)
+		QueryPerformanceFrequency(LARGE_INTEGER* lpFrequency);
+	PERF_WIN32_API(int)
+		QueryPerformanceCounter(LARGE_INTEGER* lpPerformanceCount);
+	PERF_WIN32_API(void*)
+		GetStdHandle(unsigned long nStdHandle);
+	PERF_WIN32_API(int)
+		WriteConsoleA(void* hConsoleOutput, const void* lpBuffer, unsigned long nNumberOfCharsToWrite, unsigned long* lpNumberOfCharsWritten, void* lpReserved);
+#ifdef __cplusplus
+}
+#endif
 
+PERF_API PERF_INLINE int perf_platform_enable_color(void)
+{
+	void* console = GetStdHandle((unsigned long)-11);
+	unsigned long mode;
+
+	if (!GetConsoleMode(console, &mode))
+		return 0;
+
+	/* ENABLE_PROCESSED_OUTPUT | ENABLE_VIRTUAL_TERMINAL_PROCESSING */
+	return SetConsoleMode(console, mode | 0x0001UL | 0x0004UL);
+}
 #endif /* _WINDOWS_ (windows.h) */
 
 PERF_API PERF_INLINE double perf_ll_to_double(unsigned long low_part, long high_part)
 {
-    /* The value of 2 to the power of 32, as a double constant. */
-    double two_power_32 = 4294967296.0;
-
-    return ((double)high_part * two_power_32) + (double)low_part;
+	double two_power_32 = 4294967296.0;
+	return ((double)high_part * two_power_32) + (double)low_part;
 }
 
 PERF_API PERF_INLINE double perf_platform_current_time_nanoseconds(void)
 {
-    static double perf_frequencyValue;
-    static int perf_count_frequency_initialized = 0;
+	static double perf_frequencyValue;
+	static int perf_count_frequency_initialized = 0;
 
-    LARGE_INTEGER counter;
+	LARGE_INTEGER counter;
 
-    if (!perf_count_frequency_initialized)
-    {
-        LARGE_INTEGER perf_count_frequency;
-        QueryPerformanceFrequency(&perf_count_frequency);
+	if (!perf_count_frequency_initialized)
+	{
+		LARGE_INTEGER perf_count_frequency;
+		QueryPerformanceFrequency(&perf_count_frequency);
 
-        /* Convert the 64-bit frequency value into a double */
-        perf_frequencyValue = perf_ll_to_double(perf_count_frequency.LowPart, perf_count_frequency.HighPart);
+		/* Convert the 64-bit frequency value into a double */
+		perf_frequencyValue = perf_ll_to_double(perf_count_frequency.LowPart, perf_count_frequency.HighPart);
 
-        perf_count_frequency_initialized = 1;
-    }
+		perf_count_frequency_initialized = 1;
+	}
 
-    QueryPerformanceCounter(&counter);
+	QueryPerformanceCounter(&counter);
 
-    /* Convert the 64-bit counter value into a double for precision */
-    return (perf_ll_to_double(counter.LowPart, counter.HighPart) * 1000000000.0) / perf_frequencyValue;
+	/* Convert the 64-bit counter value into a double for precision */
+	return (perf_ll_to_double(counter.LowPart, counter.HighPart) * 1000000000.0) / perf_frequencyValue;
 }
 
-PERF_API PERF_INLINE void perf_platform_print(char *str)
+PERF_API PERF_INLINE void perf_platform_print(const char* str)
 {
-    unsigned long written;
-    void *hConsole = GetStdHandle((unsigned long)-11);
-    WriteConsoleA(hConsole, str, perf_strlen(str), &written, ((void *)0));
+	static int color_initialized = 0;
+	unsigned long written;
+	void* hConsole;
+
+	if (!color_initialized)
+	{
+		perf_platform_enable_color();
+		color_initialized = 1;
+	}
+
+	hConsole = GetStdHandle((unsigned long)-11);
+	WriteConsoleA(hConsole, str, perf_strlen(str), &written, ((void*)0));
 }
 
 #endif /* _WIN32 */
@@ -142,8 +181,8 @@ PERF_API PERF_INLINE void perf_platform_print(char *str)
 #define __timespec_defined
 struct timespec
 {
-    long tv_sec;  /* seconds */
-    long tv_nsec; /* nanoseconds */
+	long tv_sec;  /* seconds */
+	long tv_nsec; /* nanoseconds */
 };
 #endif
 
@@ -162,274 +201,255 @@ extern long syscall(long number, ...);
 /* Use CLOCK_MONOTONIC for stable high-resolution timing */
 PERF_API PERF_INLINE double perf_platform_current_time_nanoseconds(void)
 {
-    struct timespec ts;
-    syscall(SYS_clock_gettime, CLOCK_MONOTONIC, &ts);
-    return (double)ts.tv_sec * 1000000000.0 + (double)ts.tv_nsec;
+	struct timespec ts;
+	syscall(SYS_clock_gettime, CLOCK_MONOTONIC, &ts);
+	return (double)ts.tv_sec * 1000000000.0 + (double)ts.tv_nsec;
 }
 
 /* Write directly to stdout without stdio buffering */
-PERF_API PERF_INLINE void perf_platform_print(char *str)
+PERF_API PERF_INLINE void perf_platform_print(const char* str)
 {
-    unsigned long len = perf_strlen(str);
-    syscall(SYS_write, STDOUT_FILENO, str, len);
+	unsigned long len = perf_strlen(str);
+	syscall(SYS_write, STDOUT_FILENO, str, len);
 }
 
 #endif /* __linux__ */
 
-/* #############################################################################
- * # APPLE PLATFORM
- * #############################################################################
- */
 #ifdef __APPLE__
+#error "APPLE IS UNSUPPORTED BY PERF"
+#endif
 
-#include <mach/mach_time.h>
-#include <unistd.h>
+#if defined(_MSC_VER) && (defined(_M_X64) || defined(_M_IX86))
 
-PERF_API PERF_INLINE double perf_platform_current_time_nanoseconds(void)
+#include <intrin.h>
+
+PERF_API PERF_INLINE perf_u64 perf_platform_current_cycle_count(void)
 {
-    static mach_timebase_info_data_t timebase;
-    uint64_t now = mach_absolute_time();
-    if (timebase.denom == 0)
-    {
-        mach_timebase_info(&timebase);
-    }
-    /* Convert to nanoseconds */
-    return (double)now * (double)timebase.numer / (double)timebase.denom;
+	return __rdtsc();
 }
 
-PERF_API PERF_INLINE void perf_platform_print(char *str)
+#elif defined(__x86_64__) || defined(__i386__)
+
+PERF_API PERF_INLINE perf_u64 perf_platform_current_cycle_count(void)
 {
-    unsigned long len = perf_strlen(str);
-    write(STDOUT_FILENO, str, len);
+	unsigned int low, high;
+	__asm__ __volatile__("rdtsc" : "=a"(low), "=d"(high));
+	return ((perf_u64)high << 32) | (perf_u64)low;
 }
 
-#endif /* __APPLE__ */
-
-#if defined(__x86_64__) || defined(__i386__)
-PERF_API PERF_INLINE unsigned long perf_platform_current_cycle_count(void)
-{
-    unsigned long low_part = 0;
-    unsigned long high_part = 0;
-    __asm __volatile("rdtsc" : "=a"(low_part), "=d"(high_part));
-    return ((unsigned long)((double)high_part * 4294967296.0 + (double)low_part));
-}
-#elif defined(__aarch64__) && defined(__APPLE__)
-#include <mach/mach_time.h>
-PERF_API PERF_INLINE unsigned long perf_platform_current_cycle_count(void)
-{
-    return (unsigned long)mach_absolute_time();
-}
+#else
+#error "Unsupported architecture for cycle counter"
 #endif
 
 /* #############################################################################
  * # String Utility Functions
  * #############################################################################
  */
-PERF_API PERF_INLINE void perf_int_to_string(int value, char *buffer, unsigned long max_len)
+PERF_API PERF_INLINE void perf_int_to_string(int value, char* buffer, unsigned long max_len)
 {
-    char temp[12]; /* Max 11 chars for a 32-bit int + null */
-    unsigned long i = 0;
-    unsigned long j = 0;
-    unsigned int uval;
-    int is_negative = 0;
+	char temp[12]; /* Max 11 chars for a 32-bit int + null */
+	unsigned long i = 0;
+	unsigned long j = 0;
+	unsigned int uval;
+	int is_negative = 0;
 
-    if (max_len == 0)
-    {
-        return;
-    }
+	if (max_len == 0)
+	{
+		return;
+	}
 
-    if (value < 0)
-    {
-        is_negative = 1;
-        /* Handle INT_MIN safely without overflow */
-        uval = (unsigned int)(-(value + 1)) + 1U;
-    }
-    else
-    {
-        uval = (unsigned int)value;
-    }
+	if (value < 0)
+	{
+		is_negative = 1;
+		/* Handle INT_MIN safely without overflow */
+		uval = (unsigned int)(-(value + 1)) + 1U;
+	}
+	else
+	{
+		uval = (unsigned int)value;
+	}
 
-    if (uval == 0)
-    {
-        temp[i++] = '0';
-    }
-    else
-    {
-        while (uval > 0)
-        {
-            temp[i++] = (char)('0' + (uval % 10));
-            uval /= 10;
-        }
-    }
+	if (uval == 0)
+	{
+		temp[i++] = '0';
+	}
+	else
+	{
+		while (uval > 0)
+		{
+			temp[i++] = (char)('0' + (uval % 10));
+			uval /= 10;
+		}
+	}
 
-    if (is_negative)
-    {
-        temp[i++] = '-';
-    }
+	if (is_negative)
+	{
+		temp[i++] = '-';
+	}
 
-    /* Reverse into the destination buffer, ensuring it fits */
-    while (j < i && j < max_len - 1)
-    {
-        buffer[j] = temp[i - 1 - j];
-        j++;
-    }
+	/* Reverse into the destination buffer, ensuring it fits */
+	while (j < i && j < max_len - 1)
+	{
+		buffer[j] = temp[i - 1 - j];
+		j++;
+	}
 
-    buffer[j] = '\0';
+	buffer[j] = '\0';
 }
 
-PERF_API PERF_INLINE void perf_ulong_to_string(unsigned long value, char *buffer, unsigned long max_len)
+PERF_API PERF_INLINE void perf_ulong_to_string(perf_u64 value, char* buffer, unsigned long max_len)
 {
-    char temp[21]; /* enough for 64-bit decimal representation */
-    unsigned long i = 0;
-    unsigned long j;
-    unsigned long pad_count;
+	char temp[21]; /* enough for 64-bit decimal representation */
+	unsigned long i = 0;
+	unsigned long j;
+	unsigned long pad_count;
 
-    if (max_len == 0)
-    {
-        return; /* can't write anything */
-    }
+	if (max_len == 0)
+	{
+		return; /* can't write anything */
+	}
 
-    /* Build number in reverse */
-    if (value == 0)
-    {
-        temp[i++] = '0';
-    }
-    else
-    {
-        while (value > 0 && i < sizeof(temp))
-        {
-            temp[i++] = (char)('0' + (value % 10));
-            value /= 10;
-        }
-    }
+	/* Build number in reverse */
+	if (value == 0)
+	{
+		temp[i++] = '0';
+	}
+	else
+	{
+		while (value > 0 && i < sizeof(temp))
+		{
+			temp[i++] = (char)('0' + (value % 10));
+			value /= 10;
+		}
+	}
 
-    /* If number length > max_len-1, truncate to fit */
-    if (i + 1 > max_len)
-    {
-        i = max_len - 1;
-    }
+	/* If number length > max_len-1, truncate to fit */
+	if (i + 1 > max_len)
+	{
+		i = max_len - 1;
+	}
 
-    /* Calculate how many spaces to prepend */
-    pad_count = (max_len - 1) - i;
+	/* Calculate how many spaces to prepend */
+	pad_count = (max_len - 1) - i;
 
-    /* Fill padding spaces */
-    for (j = 0; j < pad_count; ++j)
-    {
-        buffer[j] = ' ';
-    }
+	/* Fill padding spaces */
+	for (j = 0; j < pad_count; ++j)
+	{
+		buffer[j] = ' ';
+	}
 
-    /* Reverse number into buffer after padding */
-    for (j = 0; j < i; ++j)
-    {
-        buffer[pad_count + j] = temp[i - j - 1];
-    }
+	/* Reverse number into buffer after padding */
+	for (j = 0; j < i; ++j)
+	{
+		buffer[pad_count + j] = temp[i - j - 1];
+	}
 
-    buffer[pad_count + i] = '\0';
+	buffer[pad_count + i] = '\0';
 }
 
-PERF_API PERF_INLINE void perf_double_to_string(double value, char *buffer, unsigned long max_len, int precision)
+PERF_API PERF_INLINE void perf_double_to_string(double value, char* buffer, unsigned long max_len, int precision)
 {
-    char temp[40]; /* holds the number without padding */
-    unsigned long temp_index = 0;
-    unsigned long j;
-    unsigned long pad_count;
-    int int_part;
-    int negative = 0;
+	char temp[40]; /* holds the number without padding */
+	unsigned long temp_index = 0;
+	unsigned long j;
+	unsigned long pad_count;
+	int int_part;
+	int negative = 0;
 
-    if (max_len == 0)
-    {
-        return; /* can't write anything */
-    }
+	if (max_len == 0)
+	{
+		return; /* can't write anything */
+	}
 
-    /* Handle sign */
-    if (value < 0.0)
-    {
-        negative = 1;
-        value = -value;
-    }
+	/* Handle sign */
+	if (value < 0.0)
+	{
+		negative = 1;
+		value = -value;
+	}
 
-    /* Extract integer part */
-    int_part = (int)value;
-    value -= (double)int_part;
+	/* Extract integer part */
+	int_part = (int)value;
+	value -= (double)int_part;
 
-    /* Convert integer part to string */
-    if (int_part == 0)
-    {
-        temp[temp_index++] = '0';
-    }
-    else
-    {
-        char int_temp[32];
-        unsigned long k = 0;
-        while (int_part > 0 && k < sizeof(int_temp))
-        {
-            int_temp[k++] = (char)((int_part % 10) + '0');
-            int_part /= 10;
-        }
-        /* reverse into temp */
-        while (k > 0)
-        {
-            temp[temp_index++] = int_temp[--k];
-        }
-    }
+	/* Convert integer part to string */
+	if (int_part == 0)
+	{
+		temp[temp_index++] = '0';
+	}
+	else
+	{
+		char int_temp[32];
+		unsigned long k = 0;
+		while (int_part > 0 && k < sizeof(int_temp))
+		{
+			int_temp[k++] = (char)((int_part % 10) + '0');
+			int_part /= 10;
+		}
+		/* reverse into temp */
+		while (k > 0)
+		{
+			temp[temp_index++] = int_temp[--k];
+		}
+	}
 
-    /* Decimal point + fractional part */
-    if (precision > 0 && temp_index < sizeof(temp) - 1)
-    {
-        temp[temp_index++] = '.';
-        while (precision-- > 0 && temp_index < sizeof(temp) - 1)
-        {
-            int digit;
-            value *= 10.0;
-            digit = (int)value;
-            temp[temp_index++] = (char)(digit + '0');
-            value -= (double)digit;
-        }
-    }
+	/* Decimal point + fractional part */
+	if (precision > 0 && temp_index < sizeof(temp) - 1)
+	{
+		temp[temp_index++] = '.';
+		while (precision-- > 0 && temp_index < sizeof(temp) - 1)
+		{
+			int digit;
+			value *= 10.0;
+			digit = (int)value;
+			temp[temp_index++] = (char)(digit + '0');
+			value -= (double)digit;
+		}
+	}
 
-    /* Add sign at front of temp if negative */
-    if (negative)
-    {
-        if (temp_index < sizeof(temp) - 1)
-        {
-            /* shift digits to make room for '-' */
-            for (j = temp_index; j > 0; --j)
-                temp[j] = temp[j - 1];
-            temp[0] = '-';
-            temp_index++;
-        }
-    }
+	/* Add sign at front of temp if negative */
+	if (negative)
+	{
+		if (temp_index < sizeof(temp) - 1)
+		{
+			/* shift digits to make room for '-' */
+			for (j = temp_index; j > 0; --j)
+				temp[j] = temp[j - 1];
+			temp[0] = '-';
+			temp_index++;
+		}
+	}
 
-    /* Null terminate temp */
-    if (temp_index >= sizeof(temp))
-    {
-        temp_index = sizeof(temp) - 1;
-    }
-    temp[temp_index] = '\0';
+	/* Null terminate temp */
+	if (temp_index >= sizeof(temp))
+	{
+		temp_index = sizeof(temp) - 1;
+	}
+	temp[temp_index] = '\0';
 
-    /* Truncate to fit max_len - 1 if necessary */
-    if (temp_index > max_len - 1)
-    {
-        temp_index = max_len - 1;
-    }
+	/* Truncate to fit max_len - 1 if necessary */
+	if (temp_index > max_len - 1)
+	{
+		temp_index = max_len - 1;
+	}
 
-    /* Calculate padding spaces */
-    pad_count = (max_len - 1) - temp_index;
+	/* Calculate padding spaces */
+	pad_count = (max_len - 1) - temp_index;
 
-    /* Fill spaces first */
-    for (j = 0; j < pad_count; ++j)
-    {
-        buffer[j] = ' ';
-    }
+	/* Fill spaces first */
+	for (j = 0; j < pad_count; ++j)
+	{
+		buffer[j] = ' ';
+	}
 
-    /* Copy number */
-    for (j = 0; j < temp_index; ++j)
-    {
-        buffer[pad_count + j] = temp[j];
-    }
+	/* Copy number */
+	for (j = 0; j < temp_index; ++j)
+	{
+		buffer[pad_count + j] = temp[j];
+	}
 
-    /* Null terminate */
-    buffer[pad_count + temp_index] = '\0';
+	/* Null terminate */
+	buffer[pad_count + temp_index] = '\0';
 }
 
 /* #############################################################################
@@ -452,294 +472,293 @@ PERF_API PERF_INLINE void perf_double_to_string(double value, char *buffer, unsi
 
 typedef struct perf_stats_entry
 {
-    char file[128];                 /* File name */
-    int line;                       /* Line number */
-    char name[PERF_STATS_NAME_MAX]; /* Function or code block name */
+	char file[128];                 /* File name */
+	int line;                       /* Line number */
+	char name[PERF_STATS_NAME_MAX]; /* Function or code block name */
 
-    unsigned long count;
+	unsigned long count;
 
-    unsigned long cycles_min;
-    unsigned long cycles_max;
-    unsigned long cycles_sum;
+	perf_u64 cycles_min;
+	perf_u64 cycles_max;
+	perf_u64 cycles_sum;
 
-    double time_ms_min;
-    double time_ms_max;
-    double time_ms_sum;
+	double time_ms_min;
+	double time_ms_max;
+	double time_ms_sum;
 
 } perf_stats_entry;
 
 static perf_stats_entry perf_stats_entries[PERF_STATS_ENTRIES_MAX];
 static unsigned long perf_stats_entry_count = 0;
 
-PERF_API PERF_INLINE perf_stats_entry *perf_stats_get_entry(char *file, int line, char *name)
+PERF_API PERF_INLINE perf_stats_entry* perf_stats_get_entry(const char* file, int line, const char* name)
 {
-    unsigned long i;
-    for (i = 0; i < perf_stats_entry_count; i++)
-    {
-        if (perf_stats_entries[i].line == line)
-        {
-            char *f1 = perf_stats_entries[i].file;
-            char *f2 = file;
-            while (*f1 && *f2 && *f1 == *f2)
-            {
-                f1++;
-                f2++;
-            }
-            if (*f1 == '\0' && *f2 == '\0')
-            {
-                /* Now check name */
-                char *n1 = perf_stats_entries[i].name;
-                char *n2 = name;
-                while (*n1 && *n2 && *n1 == *n2)
-                {
-                    n1++;
-                    n2++;
-                }
-                if (*n1 == '\0' && *n2 == '\0')
-                {
-                    return &perf_stats_entries[i];
-                }
-            }
-        }
-    }
+	unsigned long i;
+	for (i = 0; i < perf_stats_entry_count; i++)
+	{
+		if (perf_stats_entries[i].line == line)
+		{
+			const char* f1 = perf_stats_entries[i].file;
+			const char* f2 = file;
+			while (*f1 && *f2 && *f1 == *f2)
+			{
+				f1++;
+				f2++;
+			}
+			if (*f1 == '\0' && *f2 == '\0')
+			{
+				const char* n1 = perf_stats_entries[i].name;
+				const char* n2 = name;
+				while (*n1 && *n2 && *n1 == *n2)
+				{
+					n1++;
+					n2++;
+				}
+				if (*n1 == '\0' && *n2 == '\0')
+				{
+					return &perf_stats_entries[i];
+				}
+			}
+		}
+	}
 
-    /* If not found, create a new entry */
-    if (perf_stats_entry_count < PERF_STATS_ENTRIES_MAX)
-    {
-        perf_stats_entry *e = &perf_stats_entries[perf_stats_entry_count++];
-        unsigned long j = 0;
+	/* If not found, create a new entry */
+	if (perf_stats_entry_count < PERF_STATS_ENTRIES_MAX)
+	{
+		perf_stats_entry* e = &perf_stats_entries[perf_stats_entry_count++];
+		unsigned long j = 0;
 
-        /* Copy file */
-        while (file[j] && j < sizeof(e->file) - 1)
-        {
-            e->file[j] = file[j];
-            j++;
-        }
-        e->file[j] = '\0';
+		/* Copy file */
+		while (file[j] && j < sizeof(e->file) - 1)
+		{
+			e->file[j] = file[j];
+			j++;
+		}
+		e->file[j] = '\0';
 
-        /* Copy name */
-        j = 0;
-        while (name[j] && j < PERF_STATS_NAME_MAX - 1)
-        {
-            e->name[j] = name[j];
-            j++;
-        }
+		/* Copy name */
+		j = 0;
+		while (name[j] && j < PERF_STATS_NAME_MAX - 1)
+		{
+			e->name[j] = name[j];
+			j++;
+		}
 
-        e->name[j] = '\0';
+		e->name[j] = '\0';
 
-        e->line = line;
-        e->count = 0;
+		e->line = line;
+		e->count = 0;
 
-        e->cycles_min = ~0UL; /* Max unsigned long */
-        e->cycles_max = 0;
-        e->cycles_sum = 0;
+		e->cycles_min = ~(perf_u64)0; /* Max u64 */
+		e->cycles_max = 0;
+		e->cycles_sum = 0;
 
-        e->time_ms_min = 1e30; /* Huge number */
-        e->time_ms_max = 0.0;
-        e->time_ms_sum = 0.0;
+		e->time_ms_min = 1e30; /* Huge number */
+		e->time_ms_max = 0.0;
+		e->time_ms_sum = 0.0;
 
-        return e;
-    }
+		return e;
+	}
 
-    return 0; /* No space */
+	return 0; /* No space */
 }
 
-PERF_API PERF_INLINE void perf_stats_store_result(char *file, int line, unsigned long cycles, double time_ms, char *name)
+PERF_API PERF_INLINE void perf_stats_store_result(const char* file, int line, perf_u64 cycles, double time_ms, const char* name)
 {
-    perf_stats_entry *e = perf_stats_get_entry(file, line, name);
+	perf_stats_entry* e = perf_stats_get_entry(file, line, name);
 
-    if (!e)
-    {
-        return; /* Out of slots */
-    }
+	if (!e)
+	{
+		return; /* Out of slots */
+	}
 
-    e->count++;
-    e->cycles_sum += cycles;
-    e->time_ms_sum += time_ms;
+	e->count++;
+	e->cycles_sum += cycles;
+	e->time_ms_sum += time_ms;
 
-    if (cycles < e->cycles_min)
-    {
-        e->cycles_min = cycles;
-    }
-    if (cycles > e->cycles_max)
-    {
-        e->cycles_max = cycles;
-    }
-    if (time_ms < e->time_ms_min)
-    {
-        e->time_ms_min = time_ms;
-    }
-    if (time_ms > e->time_ms_max)
-    {
-        e->time_ms_max = time_ms;
-    }
+	if (cycles < e->cycles_min)
+	{
+		e->cycles_min = cycles;
+	}
+	if (cycles > e->cycles_max)
+	{
+		e->cycles_max = cycles;
+	}
+	if (time_ms < e->time_ms_min)
+	{
+		e->time_ms_min = time_ms;
+	}
+	if (time_ms > e->time_ms_max)
+	{
+		e->time_ms_max = time_ms;
+	}
 }
 
 PERF_API PERF_INLINE void perf_print_stats(void)
 {
-    unsigned long i;
+	unsigned long i;
 
-    char buffer[PERF_MAX_PRINT_BUFFER];
+	char buffer[PERF_MAX_PRINT_BUFFER];
 
-    for (i = 0; i < perf_stats_entry_count; ++i)
-    {
-        unsigned long current_pos = 0;
+	for (i = 0; i < perf_stats_entry_count; ++i)
+	{
+		unsigned long current_pos = 0;
 
-        perf_stats_entry *e = &perf_stats_entries[i];
-        unsigned long avg_cycles = e->count ? e->cycles_sum / e->count : 0;
-        double avg_time_ms = e->count ? (e->time_ms_sum / (double)e->count) : 0.0;
+		perf_stats_entry* e = &perf_stats_entries[i];
+		perf_u64 avg_cycles = e->count ? e->cycles_sum / e->count : 0;
+		double avg_time_ms = e->count ? (e->time_ms_sum / (double)e->count) : 0.0;
 
-        char line_str[5];
-        char count_str[7];
+		char line_str[5];
+		char count_str[7];
 
-        char cycles_min[12];
-        char cycles_max[12];
-        char cycles_avg[12];
-        char cycles_sum[12];
+		char cycles_min[21];
+		char cycles_max[21];
+		char cycles_avg[21];
+		char cycles_sum[21];
 
-        char time_min[12];
-        char time_max[12];
-        char time_avg[12];
-        char time_sum[12];
+		char time_min[12];
+		char time_max[12];
+		char time_avg[12];
+		char time_sum[12];
 
-        perf_int_to_string(e->line, line_str, sizeof(line_str));
-        perf_ulong_to_string(e->count, count_str, sizeof(count_str));
+		perf_int_to_string(e->line, line_str, sizeof(line_str));
+		perf_ulong_to_string(e->count, count_str, sizeof(count_str));
 
-        perf_ulong_to_string(e->cycles_min, cycles_min, sizeof(cycles_min));
-        perf_ulong_to_string(e->cycles_max, cycles_max, sizeof(cycles_max));
-        perf_ulong_to_string(avg_cycles, cycles_avg, sizeof(cycles_avg));
-        perf_ulong_to_string(e->cycles_sum, cycles_sum, sizeof(cycles_sum));
+		perf_ulong_to_string(e->cycles_min, cycles_min, sizeof(cycles_min));
+		perf_ulong_to_string(e->cycles_max, cycles_max, sizeof(cycles_max));
+		perf_ulong_to_string(avg_cycles, cycles_avg, sizeof(cycles_avg));
+		perf_ulong_to_string(e->cycles_sum, cycles_sum, sizeof(cycles_sum));
 
-        perf_double_to_string(e->time_ms_min, time_min, sizeof(time_min), 4);
-        perf_double_to_string(e->time_ms_max, time_max, sizeof(time_max), 4);
-        perf_double_to_string(avg_time_ms, time_avg, sizeof(time_avg), 4);
-        perf_double_to_string(e->time_ms_sum, time_sum, sizeof(time_sum), 4);
+		perf_double_to_string(e->time_ms_min, time_min, sizeof(time_min), 4);
+		perf_double_to_string(e->time_ms_max, time_max, sizeof(time_max), 4);
+		perf_double_to_string(avg_time_ms, time_avg, sizeof(time_avg), 4);
+		perf_double_to_string(e->time_ms_sum, time_sum, sizeof(time_sum), 4);
 
-        if (i == 0)
-        {
-            buffer[0] = '\0';
-            current_pos += perf_append_string(buffer, current_pos, PERF_MAX_PRINT_BUFFER, e->file);
-            current_pos += perf_append_string(buffer, current_pos, PERF_MAX_PRINT_BUFFER, ":");
-            current_pos += perf_append_string(buffer, current_pos, PERF_MAX_PRINT_BUFFER, line_str);
-            current_pos += perf_append_string(buffer, current_pos, PERF_MAX_PRINT_BUFFER, " [perf]\n");
+		if (i == 0)
+		{
+			buffer[0] = '\0';
+			current_pos += perf_append_string(buffer, current_pos, PERF_MAX_PRINT_BUFFER, e->file);
+			current_pos += perf_append_string(buffer, current_pos, PERF_MAX_PRINT_BUFFER, ":");
+			current_pos += perf_append_string(buffer, current_pos, PERF_MAX_PRINT_BUFFER, line_str);
+			current_pos += perf_append_string(buffer, current_pos, PERF_MAX_PRINT_BUFFER, " [perf]\n");
 
-            current_pos += perf_append_string(buffer, current_pos, PERF_MAX_PRINT_BUFFER, e->file);
-            current_pos += perf_append_string(buffer, current_pos, PERF_MAX_PRINT_BUFFER, ":");
-            current_pos += perf_append_string(buffer, current_pos, PERF_MAX_PRINT_BUFFER, line_str);
-            current_pos += perf_append_string(buffer, current_pos, PERF_MAX_PRINT_BUFFER, " [perf] +-------------------------------------------------------+-------------------------------------------------------+\n");
+			current_pos += perf_append_string(buffer, current_pos, PERF_MAX_PRINT_BUFFER, e->file);
+			current_pos += perf_append_string(buffer, current_pos, PERF_MAX_PRINT_BUFFER, ":");
+			current_pos += perf_append_string(buffer, current_pos, PERF_MAX_PRINT_BUFFER, line_str);
+			current_pos += perf_append_string(buffer, current_pos, PERF_MAX_PRINT_BUFFER, " [perf] +-------------------------------------------------------+-------------------------------------------------------+\n");
 
-            current_pos += perf_append_string(buffer, current_pos, PERF_MAX_PRINT_BUFFER, e->file);
-            current_pos += perf_append_string(buffer, current_pos, PERF_MAX_PRINT_BUFFER, ":");
-            current_pos += perf_append_string(buffer, current_pos, PERF_MAX_PRINT_BUFFER, line_str);
-            current_pos += perf_append_string(buffer, current_pos, PERF_MAX_PRINT_BUFFER, " [perf] | cylces                                                | time_ms                                               |\n");
+			current_pos += perf_append_string(buffer, current_pos, PERF_MAX_PRINT_BUFFER, e->file);
+			current_pos += perf_append_string(buffer, current_pos, PERF_MAX_PRINT_BUFFER, ":");
+			current_pos += perf_append_string(buffer, current_pos, PERF_MAX_PRINT_BUFFER, line_str);
+			current_pos += perf_append_string(buffer, current_pos, PERF_MAX_PRINT_BUFFER, " [perf] | cylces                                                | time_ms                                               |\n");
 
-            current_pos += perf_append_string(buffer, current_pos, PERF_MAX_PRINT_BUFFER, e->file);
-            current_pos += perf_append_string(buffer, current_pos, PERF_MAX_PRINT_BUFFER, ":");
-            current_pos += perf_append_string(buffer, current_pos, PERF_MAX_PRINT_BUFFER, line_str);
-            current_pos += perf_append_string(buffer, current_pos, PERF_MAX_PRINT_BUFFER, " [perf] +-------------+-------------+-------------+-------------+-------------+-------------+-------------+-------------+\n");
+			current_pos += perf_append_string(buffer, current_pos, PERF_MAX_PRINT_BUFFER, e->file);
+			current_pos += perf_append_string(buffer, current_pos, PERF_MAX_PRINT_BUFFER, ":");
+			current_pos += perf_append_string(buffer, current_pos, PERF_MAX_PRINT_BUFFER, line_str);
+			current_pos += perf_append_string(buffer, current_pos, PERF_MAX_PRINT_BUFFER, " [perf] +-------------+-------------+-------------+-------------+-------------+-------------+-------------+-------------+\n");
 
-            current_pos += perf_append_string(buffer, current_pos, PERF_MAX_PRINT_BUFFER, e->file);
-            current_pos += perf_append_string(buffer, current_pos, PERF_MAX_PRINT_BUFFER, ":");
-            current_pos += perf_append_string(buffer, current_pos, PERF_MAX_PRINT_BUFFER, line_str);
-            current_pos += perf_append_string(buffer, current_pos, PERF_MAX_PRINT_BUFFER, " [perf] |         min |         max |         avg |         sum |         min |         max |         avg |         sum |\n");
+			current_pos += perf_append_string(buffer, current_pos, PERF_MAX_PRINT_BUFFER, e->file);
+			current_pos += perf_append_string(buffer, current_pos, PERF_MAX_PRINT_BUFFER, ":");
+			current_pos += perf_append_string(buffer, current_pos, PERF_MAX_PRINT_BUFFER, line_str);
+			current_pos += perf_append_string(buffer, current_pos, PERF_MAX_PRINT_BUFFER, " [perf] |         min |         max |         avg |         sum |         min |         max |         avg |         sum |\n");
 
-            current_pos += perf_append_string(buffer, current_pos, PERF_MAX_PRINT_BUFFER, e->file);
-            current_pos += perf_append_string(buffer, current_pos, PERF_MAX_PRINT_BUFFER, ":");
-            current_pos += perf_append_string(buffer, current_pos, PERF_MAX_PRINT_BUFFER, line_str);
-            current_pos += perf_append_string(buffer, current_pos, PERF_MAX_PRINT_BUFFER, " [perf] +-------------+-------------+-------------+-------------+-------------+-------------+-------------+-------------+\n");
-            current_pos = 0;
-            perf_platform_print(buffer);
-        }
+			current_pos += perf_append_string(buffer, current_pos, PERF_MAX_PRINT_BUFFER, e->file);
+			current_pos += perf_append_string(buffer, current_pos, PERF_MAX_PRINT_BUFFER, ":");
+			current_pos += perf_append_string(buffer, current_pos, PERF_MAX_PRINT_BUFFER, line_str);
+			current_pos += perf_append_string(buffer, current_pos, PERF_MAX_PRINT_BUFFER, " [perf] +-------------+-------------+-------------+-------------+-------------+-------------+-------------+-------------+\n");
+			current_pos = 0;
+			perf_platform_print(buffer);
+		}
 
-        buffer[0] = '\0';
+		buffer[0] = '\0';
 
-        current_pos += perf_append_string(buffer, current_pos, PERF_MAX_PRINT_BUFFER, e->file);
-        current_pos += perf_append_string(buffer, current_pos, PERF_MAX_PRINT_BUFFER, ":");
-        current_pos += perf_append_string(buffer, current_pos, PERF_MAX_PRINT_BUFFER, line_str);
-        current_pos += perf_append_string(buffer, current_pos, PERF_MAX_PRINT_BUFFER, " [perf] | ");
-        current_pos += perf_append_string(buffer, current_pos, PERF_MAX_PRINT_BUFFER, cycles_min);
-        current_pos += perf_append_string(buffer, current_pos, PERF_MAX_PRINT_BUFFER, " | ");
-        current_pos += perf_append_string(buffer, current_pos, PERF_MAX_PRINT_BUFFER, cycles_max);
-        current_pos += perf_append_string(buffer, current_pos, PERF_MAX_PRINT_BUFFER, " | ");
-        current_pos += perf_append_string(buffer, current_pos, PERF_MAX_PRINT_BUFFER, cycles_avg);
-        current_pos += perf_append_string(buffer, current_pos, PERF_MAX_PRINT_BUFFER, " | ");
-        current_pos += perf_append_string(buffer, current_pos, PERF_MAX_PRINT_BUFFER, cycles_sum);
-        current_pos += perf_append_string(buffer, current_pos, PERF_MAX_PRINT_BUFFER, " | ");
-        current_pos += perf_append_string(buffer, current_pos, PERF_MAX_PRINT_BUFFER, time_min);
-        current_pos += perf_append_string(buffer, current_pos, PERF_MAX_PRINT_BUFFER, " | ");
-        current_pos += perf_append_string(buffer, current_pos, PERF_MAX_PRINT_BUFFER, time_max);
-        current_pos += perf_append_string(buffer, current_pos, PERF_MAX_PRINT_BUFFER, " | ");
-        current_pos += perf_append_string(buffer, current_pos, PERF_MAX_PRINT_BUFFER, time_avg);
-        current_pos += perf_append_string(buffer, current_pos, PERF_MAX_PRINT_BUFFER, " | ");
-        current_pos += perf_append_string(buffer, current_pos, PERF_MAX_PRINT_BUFFER, time_sum);
-        current_pos += perf_append_string(buffer, current_pos, PERF_MAX_PRINT_BUFFER, " | ");
-        current_pos += perf_append_string(buffer, current_pos, PERF_MAX_PRINT_BUFFER, count_str);
-        current_pos += perf_append_string(buffer, current_pos, PERF_MAX_PRINT_BUFFER, " x ");
-        current_pos += perf_append_string(buffer, current_pos, PERF_MAX_PRINT_BUFFER, e->name);
-        current_pos += perf_append_string(buffer, current_pos, PERF_MAX_PRINT_BUFFER, "\n");
-        current_pos = 0;
+		current_pos += perf_append_string(buffer, current_pos, PERF_MAX_PRINT_BUFFER, e->file);
+		current_pos += perf_append_string(buffer, current_pos, PERF_MAX_PRINT_BUFFER, ":");
+		current_pos += perf_append_string(buffer, current_pos, PERF_MAX_PRINT_BUFFER, line_str);
+		current_pos += perf_append_string(buffer, current_pos, PERF_MAX_PRINT_BUFFER, " [perf] | ");
+		current_pos += perf_append_string(buffer, current_pos, PERF_MAX_PRINT_BUFFER, cycles_min);
+		current_pos += perf_append_string(buffer, current_pos, PERF_MAX_PRINT_BUFFER, " | ");
+		current_pos += perf_append_string(buffer, current_pos, PERF_MAX_PRINT_BUFFER, cycles_max);
+		current_pos += perf_append_string(buffer, current_pos, PERF_MAX_PRINT_BUFFER, " | ");
+		current_pos += perf_append_string(buffer, current_pos, PERF_MAX_PRINT_BUFFER, cycles_avg);
+		current_pos += perf_append_string(buffer, current_pos, PERF_MAX_PRINT_BUFFER, " | ");
+		current_pos += perf_append_string(buffer, current_pos, PERF_MAX_PRINT_BUFFER, cycles_sum);
+		current_pos += perf_append_string(buffer, current_pos, PERF_MAX_PRINT_BUFFER, " | ");
+		current_pos += perf_append_string(buffer, current_pos, PERF_MAX_PRINT_BUFFER, time_min);
+		current_pos += perf_append_string(buffer, current_pos, PERF_MAX_PRINT_BUFFER, " | ");
+		current_pos += perf_append_string(buffer, current_pos, PERF_MAX_PRINT_BUFFER, time_max);
+		current_pos += perf_append_string(buffer, current_pos, PERF_MAX_PRINT_BUFFER, " | ");
+		current_pos += perf_append_string(buffer, current_pos, PERF_MAX_PRINT_BUFFER, time_avg);
+		current_pos += perf_append_string(buffer, current_pos, PERF_MAX_PRINT_BUFFER, " | ");
+		current_pos += perf_append_string(buffer, current_pos, PERF_MAX_PRINT_BUFFER, time_sum);
+		current_pos += perf_append_string(buffer, current_pos, PERF_MAX_PRINT_BUFFER, " | ");
+		current_pos += perf_append_string(buffer, current_pos, PERF_MAX_PRINT_BUFFER, count_str);
+		current_pos += perf_append_string(buffer, current_pos, PERF_MAX_PRINT_BUFFER, " x ");
+		current_pos += perf_append_string(buffer, current_pos, PERF_MAX_PRINT_BUFFER, e->name);
+		current_pos += perf_append_string(buffer, current_pos, PERF_MAX_PRINT_BUFFER, "\n");
+		current_pos = 0;
 
-        perf_platform_print(buffer);
+		perf_platform_print(buffer);
 
-        if (i == perf_stats_entry_count - 1)
-        {
-            buffer[0] = '\0';
-            current_pos += perf_append_string(buffer, current_pos, PERF_MAX_PRINT_BUFFER, e->file);
-            current_pos += perf_append_string(buffer, current_pos, PERF_MAX_PRINT_BUFFER, ":");
-            current_pos += perf_append_string(buffer, current_pos, PERF_MAX_PRINT_BUFFER, line_str);
-            current_pos += perf_append_string(buffer, current_pos, PERF_MAX_PRINT_BUFFER, " [perf] +-------------+-------------+-------------+-------------+-------------+-------------+-------------+-------------+\n");
-            current_pos = 0;
-            perf_platform_print(buffer);
-        }
-    }
+		if (i == perf_stats_entry_count - 1)
+		{
+			buffer[0] = '\0';
+			current_pos += perf_append_string(buffer, current_pos, PERF_MAX_PRINT_BUFFER, e->file);
+			current_pos += perf_append_string(buffer, current_pos, PERF_MAX_PRINT_BUFFER, ":");
+			current_pos += perf_append_string(buffer, current_pos, PERF_MAX_PRINT_BUFFER, line_str);
+			current_pos += perf_append_string(buffer, current_pos, PERF_MAX_PRINT_BUFFER, " [perf] +-------------+-------------+-------------+-------------+-------------+-------------+-------------+-------------+\n");
+			current_pos = 0;
+			perf_platform_print(buffer);
+		}
+	}
 }
 #else
-PERF_API PERF_INLINE void perf_stats_store_result(char *file, int line, unsigned long cycles, double time_ms, char *name)
+PERF_API PERF_INLINE void perf_stats_store_result(const char* file, int line, perf_u64 cycles, double time_ms, const char* name)
 {
-    (void)file;
-    (void)line;
-    (void)cycles;
-    (void)time_ms;
-    (void)name;
+	(void)file;
+	(void)line;
+	(void)cycles;
+	(void)time_ms;
+	(void)name;
 }
 #endif /* PERF_STATS_ENABLE */
 
 #ifdef PERF_DISBALE_INTERMEDIATE_PRINT
-PERF_API PERF_INLINE void perf_print_result(char *file, int line, unsigned long cycles, double time_ms, char *name)
+PERF_API PERF_INLINE void perf_print_result(const char* file, int line, perf_u64 cycles, double time_ms, const char* name)
 {
-    (void)file;
-    (void)line;
-    (void)cycles;
-    (void)time_ms;
-    (void)name;
+	(void)file;
+	(void)line;
+	(void)cycles;
+	(void)time_ms;
+	(void)name;
 }
 #else
-PERF_API PERF_INLINE void perf_print_result(char *file, int line, unsigned long cycles, double time_ms, char *name)
+PERF_API PERF_INLINE void perf_print_result(const char* file, int line, perf_u64 cycles, double time_ms, const char* name)
 {
-    char buffer[PERF_MAX_PRINT_BUFFER];
-    char cycles_str[14];
-    char time_ms_str[14];
-    char line_str[12];
-    unsigned long current_pos = 0;
+	char buffer[PERF_MAX_PRINT_BUFFER];
+	char cycles_str[21];
+	char time_ms_str[14];
+	char line_str[12];
+	unsigned long current_pos = 0;
 
-    /* Format numbers into temporary buffers. */
-    perf_ulong_to_string(cycles, cycles_str, sizeof(cycles_str));
-    perf_double_to_string(time_ms, time_ms_str, sizeof(time_ms_str), 6);
-    perf_int_to_string(line, line_str, sizeof(line_str));
+	/* Format numbers into temporary buffers. */
+	perf_ulong_to_string(cycles, cycles_str, sizeof(cycles_str));
+	perf_double_to_string(time_ms, time_ms_str, sizeof(time_ms_str), 6);
+	perf_int_to_string(line, line_str, sizeof(line_str));
 
-    /* Build the final string safely and efficiently. */
-    current_pos += perf_append_string(buffer, current_pos, PERF_MAX_PRINT_BUFFER, file);
-    current_pos += perf_append_string(buffer, current_pos, PERF_MAX_PRINT_BUFFER, ":");
-    current_pos += perf_append_string(buffer, current_pos, PERF_MAX_PRINT_BUFFER, line_str);
-    current_pos += perf_append_string(buffer, current_pos, PERF_MAX_PRINT_BUFFER, " [perf] ");
-    current_pos += perf_append_string(buffer, current_pos, PERF_MAX_PRINT_BUFFER, cycles_str);
-    current_pos += perf_append_string(buffer, current_pos, PERF_MAX_PRINT_BUFFER, " cycles, ");
-    current_pos += perf_append_string(buffer, current_pos, PERF_MAX_PRINT_BUFFER, time_ms_str);
-    current_pos += perf_append_string(buffer, current_pos, PERF_MAX_PRINT_BUFFER, " ms, \"");
-    current_pos += perf_append_string(buffer, current_pos, PERF_MAX_PRINT_BUFFER, name);
-    current_pos += perf_append_string(buffer, current_pos, PERF_MAX_PRINT_BUFFER, "\"\n");
+	/* Build the final string safely and efficiently. */
+	current_pos += perf_append_string(buffer, current_pos, PERF_MAX_PRINT_BUFFER, file);
+	current_pos += perf_append_string(buffer, current_pos, PERF_MAX_PRINT_BUFFER, "\x1b[33m:\x1b[0m");
+	current_pos += perf_append_string(buffer, current_pos, PERF_MAX_PRINT_BUFFER, line_str);
+	current_pos += perf_append_string(buffer, current_pos, PERF_MAX_PRINT_BUFFER, " [perf] ");
+	current_pos += perf_append_string(buffer, current_pos, PERF_MAX_PRINT_BUFFER, cycles_str);
+	current_pos += perf_append_string(buffer, current_pos, PERF_MAX_PRINT_BUFFER, " cycles, ");
+	current_pos += perf_append_string(buffer, current_pos, PERF_MAX_PRINT_BUFFER, time_ms_str);
+	current_pos += perf_append_string(buffer, current_pos, PERF_MAX_PRINT_BUFFER, " ms, \"");
+	current_pos += perf_append_string(buffer, current_pos, PERF_MAX_PRINT_BUFFER, name);
+	current_pos += perf_append_string(buffer, current_pos, PERF_MAX_PRINT_BUFFER, "\"\n");
 
-    perf_platform_print(buffer);
+	perf_platform_print(buffer);
 }
 #endif
 
@@ -751,7 +770,7 @@ PERF_API PERF_INLINE void perf_print_result(char *file, int line, unsigned long 
 #define PERF_PROFILE_WITH_NAME(func_call, name)                                                                 \
     do                                                                                                          \
     {                                                                                                           \
-        unsigned long perf_start_cycles, perf_end_cycles;                                                       \
+        perf_u64 perf_start_cycles, perf_end_cycles;                                                       \
         double perf_start_time_nano, perf_end_time_nano;                                                        \
         double perf_time_ms;                                                                                    \
         perf_start_time_nano = perf_platform_current_time_nanoseconds();                                        \
